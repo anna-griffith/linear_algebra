@@ -1,0 +1,382 @@
+"""
+Created on Mon Feb 18 10:29:49 2019
+
+@author: annagriffith
+"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib import cm
+from mpl_toolkits.mplot3d import Axes3D
+from scipy.linalg import lu, solve, svd, diagsvd, inv
+from numpy.linalg import matrix_rank
+from scipy.stats import ortho_group
+
+#Computes a matric of minors
+def Minors(X,i,j):
+    n = X.shape[0]
+    M = X[np.array(list(range(i))+list(range(i+1,n)))[:,np.newaxis],
+               np.array(list(range(j))+list(range(j+1,n)))]
+    return M 
+
+#Computes the determinant of a matrix
+def det(X): 
+    n = X.shape[0]
+    local_det = 0
+    if n>2:
+        for j in range (n):
+            new_X = Minors(X,0,j)
+            n = n-1
+            x_factor = (-1)**(j)*X[0][j]
+            new_Xdet = det(new_X)
+            local_det += (x_factor*new_Xdet)   
+        return local_det
+    
+    elif n ==2 :         
+        return X[0][0]*X[1][1]-X[1][0]*X[0][1]
+    else:
+        return X
+
+#Computed the inverse
+def inverse(X):
+    n = X.shape[0]
+    C = np.zeros((n,n))
+    in_Matrix = np.zeros((n,n))
+    totaldet = det(X) 
+    for i in range (n):
+        for j in range (n): 
+            new_X = Minors(X,i,j)
+            C[i][j] = (-1)**(i+j)* det(new_X)           
+            in_Matrix[j][i] =  (C[i][j]) /  totaldet 
+
+    return in_Matrix
+
+#Tests the inverse
+def test(X,x,b):
+    n = X.shape[0]
+    difference = abs((X.dot(x)-b))
+    #set tolerance incase b is zero vector
+    t = 10**-12
+    for i in range(n):
+        if difference[i] >= max(0.01*abs(b[i]), t):
+            return 'errors greater than 1% occurred'
+        else:
+            return 'answer correct to within 1%'
+
+# Own LU decomposition functions        
+def matrix_multiply(X,Y):
+    n = X.shape[0]
+    m = Y.shape[1]
+    Z = np.zeros((n,m))
+    for i in range(n):
+        for j in range(m):
+            for k in range(Y.shape[0]):           
+                Z[i][j] += X[i][k] * Y[k][j] 
+    return Z
+
+#Creates a pivot matrix to avoid null values on diagonal
+def pivot_Matrix(X):
+    n = X.shape[0]
+    id_Matrix = np.identity(n)
+    for j in range(n):
+        max_row = max(range(j, n), key=lambda i: abs(X[i][j]))
+        if j != max_row:
+            id_Matrix[[j,max_row]] = id_Matrix[[max_row,j]]
+    return id_Matrix
+
+
+#LU Decomposition of a matrix
+def LU_decomp(X):
+    #create test on whether pivot matrix is necassary??
+    #sort our error message on singular matrices
+    n = X.shape[0]
+    L = np.zeros((n,n))
+    U = np.zeros((n,n))
+    P = pivot_Matrix(X)
+    PX = matrix_multiply(P,X)
+    
+    for k in range(n):
+        L[k][k] = 1
+        U[k, k] = (PX[k, k] - np.dot(L[k, :k], U[:k, k])) / L[k, k]
+        
+        for j in range(k+1, n):
+                U[k, j] = (PX[k, j] - np.dot(L[k, :k], U[:k, j])) / L[k, k]
+        for i in range(k+1, n):
+                L[i, k] = (PX[i, k] - np.dot(L[i, :k], U[:k, k])) / U[k, k]
+    
+    return L , U, PX, P
+
+#Solves an Ax=b matrix linear problem
+def solve_x(M,b):
+    n = len(M)
+    y = np.zeros((n, 1))
+    x = np.zeros((n, 1))
+    b2 = np.zeros((n, 1))
+
+    b2 = matrix_multiply(P,b)
+    
+    #solve for y 
+    y[0][0] = b2[0][0]/L[0][0]  
+    for i in range(1,n):
+        m = np.dot(L[i, :i], y[:i, 0])
+        y[i][0] = (b2[i][0] - m)/L[i, i]
+
+    #solve for x 
+    x[n-1][0] = y[n-1][0]/U[n-1][n-1]
+    for i in reversed(range(n-1)):
+        h = np.dot(U[i, i+1:], x[i+1:, 0])
+        x[i][0] = (y[i][0] - h)/U[i, i]
+
+    return x 
+
+#Built in LU decomp function
+     
+def find_x(P,L,U,b):   
+    b2 = P.dot(b)
+    y = solve(L,b2)
+    x = solve(U,y)    
+    return x
+
+#SVD decomp function
+
+def SVD(U, Sig, VH):
+    #functon for general n x m matrix   
+    m, n  = A.shape        
+    x_bar = np.zeros((n,1)) 
+    x = np.zeros((n,1))      
+    
+    in_Sig = Sig
+    #set a threshold value
+    Sig_max = abs(np.max(Sig))
+    t = Sig_max*10**-12
+    
+    for j in range(min(n,m)):
+        if Sig[j][j] > t: 
+            in_Sig[j][j] = 1/Sig[j][j]    
+        else:
+            in_Sig[j][j] = 0  
+           
+    in_A = VH.T.dot(in_Sig.T.dot(U.T))        
+    if rank == n:         
+        x = in_A.dot(b)
+    
+    elif rank != n: 
+        x_bar = in_A.dot(b)
+        
+    return x, x_bar
+
+#this is supposed to be a built in function but wouldn't import 
+#so I copied the documentation code
+def null_space(A, rcond=None):
+    if rcond is None:
+        rcond = np.finfo(sig.dtype).eps * n
+    tol = np.amax(sig) * rcond
+    num = np.sum(sig > tol, dtype=int)
+    Q = VH[num:,:].T.conj()
+    return Q
+
+#Task 3 functions
+
+def two_Tension(x,z):
+    b = np.array(np.mat('0; 686.7'))
+       
+    norm_A = np.sqrt(x**2 + z**2)
+    norm_B = np.sqrt((x-15)**2 + z**2)
+    
+    A = np.array([[x/norm_A, -(15-x)/norm_B],[ z/norm_A, z/norm_B]])           
+    T = inv(A).dot(b)
+    # excludes non-physical negative tension solutions
+    for i in range(2):
+        if T[i]<0:
+            return 0
+        
+    T_A = (T[0])
+    return T_A
+
+def three_Tension(x,y,z):
+    b = np.array(np.mat('0; 0; 686.7'))
+    
+    norm_A = np.sqrt(x**2 + y**2 + z**2)
+    norm_B = np.sqrt((x-15)**2 + y**2 + z**2)
+    norm_C = np.sqrt((x-7.5)**2 + (y-8)**2 + z**2)
+    
+    A = np.array([[x/(norm_A), -(15-x)/(norm_B), -(7.5-x)/(norm_C)],
+                   [ y/(norm_A), y/(norm_B), -(8-y)/(norm_C)],
+                   [z/(norm_A), z/(norm_B), z/(norm_C)]])           
+    T = inv(A).dot(b)
+    for i in range(3):
+        if T[i]<0:
+            return 0
+    
+    T_A = (T[0])  
+    return T_A
+
+#Error check on inputs, loops until valid input given
+def get_input(text):
+   while True: 
+    raw_input = input(text)                                                    
+    
+    try: 
+     out = eval(raw_input)
+     return out
+    
+    except NameError or TypeError or ValueError:
+      print('\nError: That was not a valid number \nPlease try again\n')
+      continue
+    
+    else:
+      return raw_input 
+      break 
+
+#function to create random orthonormal matrix of closen size
+def random_A(dim):
+    n = dim
+    A = ortho_group.rvs(dim=n)    
+    return A
+
+#function to create near singular matrix for chosen k 
+def ChooseDet_A(k):
+    A = np.array([[1, 1, 1],[ 1, 2, -1],[ 2, 3, k]])
+    return A
+
+#make A and b depending on user selection
+def makeAb(ChooseSection):
+    if ChooseSection == 'a':
+        n = int(get_input('Choose the dimension of your matrix, size of n<10'
+                       '\nrecommended to reduce computational time'
+                       ' n = '))
+        A = random_A(n)
+        print('A = \n',A)
+        b = b = np.ones((n,1))
+        return A, b
+    if ChooseSection == 'b':
+        k = float(get_input('Choose your value of k '
+                           '\n(k = 0 will create a singular matrix) '
+                           '\n k = ')) 
+        A = ChooseDet_A(k)
+        print('A = \n',A)
+        b = np.array(np.mat('5; 10; 15.0'))
+        return A, b
+
+#user chooses section
+ChooseSection = '0'
+while ChooseSection != 'q':
+    ChooseSection = input('\nChoose one of the following sections:'
+    '\n\n"a" to solve for x for a randomly generated'
+    '\northonormal matrix A of your chosen size, and b as a column of ones'
+    '\n\n"b" to solve a matrix of the form A = '
+    '\n [1 1 1'
+    '\n 1 2 -1'
+    '\n 2 3 k] \nFor a chosen k and b = (5; 10; 15)'
+    '\n\n"c" to complete task 3'
+    '\n"q" to quit\n\nYour choice: ')
+
+    if ChooseSection == 'a' or ChooseSection == 'b':
+              
+        A , b =  makeAb(ChooseSection)    
+        
+        total_det = det(A)
+        if total_det == 0 :
+            print('\nmatrix is singular, cannot perform analytical inversion ' 
+                  '\nor LU decomposition')
+        else:
+            xA = inverse(A).dot(b)
+            print('\nAnalytical: x = \n', xA)
+            print(test(A,xA,b))
+              
+            (L, U , PX, P) = LU_decomp(A)
+            xO = solve_x(A,b)
+            print('\nOwn LU decomposition: x = \n',xO) 
+            print(test(A,xO,b))
+            
+            (P2, L2, U2) = lu(A)
+            A2 = inv(P2).dot(L2.dot(U2)) 
+            xB = find_x(P2,L2,U2,b)
+            print('\nBuilt in LU decomposition: x = \n',xB) 
+            print(test(A2,xB,b))
+           
+    
+        rank = matrix_rank(A)
+        (U, sig, VH) = svd(A)
+        n = A.shape[0]
+        Sig = diagsvd(sig,n,n) 
+        (xS,xS_bar) = SVD(U, Sig, VH)
+        
+        if rank == n: 
+            #gives exact answer
+            print('\nSVD decomposition :x= \n',xS)
+            print(test(A,xS,b))
+        elif rank < n :
+            #gives a space of solutions
+            v = np.zeros((n,1))
+            ns = null_space(U.dot(Sig.dot(VH))) 
+            print('\nSVD decomposition:'
+                '\nunderdetermined, x= \n',xS_bar,'\n+\u03BB',ns)
+            
+        else:
+            #gives an approximate solution based on least squares
+            print('SVD decomposition: \n overdetermined, x_bar= \n',xS_bar) 
+     
+    
+    elif ChooseSection == 'c':
+        x = np.linspace(0,15,100)
+        y = np.linspace(0,8,100)
+        z = np.linspace(1,8,100)
+        X, Z = np.meshgrid(x,z)
+        
+        print('In 2D case \n\n')      
+        # finds tension for each value of x, z                
+        ts = np.array([two_Tension(x,z) for x,z in zip(np.ravel(X),
+                                           np.ravel(Z))])
+        #puts it back into a square matrix
+        T = ts.reshape(X.shape)
+
+        #finds max tension   
+        print('maximum tension = ',np.amax(T),'N' )
+        np.unravel_index(T.argmax(), T.shape)
+        in_x = (np.unravel_index(T.argmax(), T.shape))[1]
+        in_z = (np.unravel_index(T.argmax(), T.shape))[0]
+        print('at x,z = (',x[in_x],',',z[in_z],')')
+
+        #plots 2D case        
+        ax = Axes3D(plt.figure())
+        ax.plot_surface(X, T, Z, rstride=5, cstride=5, cmap=cm.coolwarm,
+                        linewidth=0.1)
+        ax.set_xlabel('x (m)')
+        ax.set_ylabel('Tension, (N)')
+        ax.set_zlabel('z (m)')
+        ax.view_init(65, 90)
+        plt.show()
+        
+
+        #plots 3D case for 3 values of z 
+        print('In 3D case for different value of z \n\n' )        
+        for i in [1,4,8]:
+            x = np.linspace(0,15,100)
+            y = np.linspace(0,8,100)
+            print('z = ',i,'m') 
+            X, Y = np.meshgrid(x,y)   
+            ts = np.array([three_Tension(x,y,i) for x,y in zip(np.ravel(X),
+                                         np.ravel(Y))])
+            T = ts.reshape(X.shape) 
+            
+            #finds max tension   
+            print('maximum tension = ',np.amax(T),'N' )
+            np.unravel_index(T.argmax(), T.shape)
+            in_x = (np.unravel_index(T.argmax(), T.shape))[1]
+            in_y = (np.unravel_index(T.argmax(), T.shape))[0]
+            print('at x,y = (',x[in_x],',',y[in_y],')')
+        
+            ax = Axes3D(plt.figure())
+            ax.plot_surface(X, T, Y, rstride=5, cstride=5,
+                            cmap=cm.coolwarm, linewidth=0.1)
+            ax.set_xlabel('x (m)')
+            ax.set_ylabel('Tension, (N)')
+            ax.set_zlabel('y (m)')
+            ax.view_init(65, 90)
+            plt.show()  
+
+    elif ChooseSection != 'q':    
+            print('This is not a valid choice')
+
+print('You have chosen to finish - goodbye.')        
