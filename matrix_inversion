@@ -175,7 +175,7 @@ def null_space(A, rcond=None):
     Q = VH[num:,:].T.conj()
     return Q
 
-#Task 3 functions
+#Physics problem functions
 
 def two_Tension(x,z):
     b = np.array(np.mat('0; 686.7'))
